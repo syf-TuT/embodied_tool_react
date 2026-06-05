@@ -1,0 +1,22 @@
+[
+  {
+    "task_id": "task_001",
+    "scene": "FloorPlan1",
+    "instruction": "pick up the mug"
+  },
+  {
+    "task_id": "task_002",
+    "scene": "FloorPlan1",
+    "instruction": "open the fridge"
+  },
+  {
+    "task_id": "task_003",
+    "scene": "FloorPlan1",
+    "instruction": "put the apple in the fridge"
+  },
+  {
+    "task_id": "task_004",
+    "scene": "FloorPlan2",
+    "instruction": "put the mug on the countertop"
+  }
+]
