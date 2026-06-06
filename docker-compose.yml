@@ -1,0 +1,51 @@
+services:
+  ai2thor:
+    build:
+      context: .
+    image: embodied-tool-react-ai2thor:latest
+    working_dir: /workspace
+    shm_size: "2gb"
+    environment:
+      PYTHONPATH: /workspace
+    volumes:
+      - .:/workspace
+      - ai2thor_cache:/root/.ai2thor
+      - ./outputs:/workspace/outputs
+    command:
+      - timeout
+      - 180s
+      - xvfb-run
+      - -a
+      - python
+      - scripts/run_ai2thor_minimal.py
+      - --platform
+      - linux64
+      - --scene
+      - FloorPlan1
+      - --instruction
+      - put the apple in the fridge
+      - --max-steps
+      - "8"
+      - --server-timeout
+      - "20"
+
+  ai2thor-shell:
+    build:
+      context: .
+    image: embodied-tool-react-ai2thor:latest
+    working_dir: /workspace
+    shm_size: "2gb"
+    environment:
+      PYTHONPATH: /workspace
+    volumes:
+      - .:/workspace
+      - ai2thor_cache:/root/.ai2thor
+      - ./outputs:/workspace/outputs
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+    profiles:
+      - shell
+
+volumes:
+  ai2thor_cache:

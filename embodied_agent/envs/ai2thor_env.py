@@ -24,12 +24,21 @@ class AI2ThorEnv:
             ) from exc
 
         kwargs = controller_kwargs or {}
-        self.controller = Controller(
-            scene=scene,
-            gridSize=grid_size,
-            visibilityDistance=visibility_distance,
-            **kwargs,
-        )
+        try:
+            self.controller = Controller(
+                scene=scene,
+                gridSize=grid_size,
+                visibilityDistance=visibility_distance,
+                **kwargs,
+            )
+        except ValueError as exc:
+            if "arch=Windows" in str(exc):
+                raise RuntimeError(
+                    "AI2-THOR did not find a native Windows Unity build for this version. "
+                    "Run the real Unity smoke test from Linux/macOS, or use WSL/Linux with "
+                    "a supported AI2-THOR platform such as CloudRendering."
+                ) from exc
+            raise
         self.scene = scene
         self.last_event = getattr(self.controller, "last_event", None)
 
@@ -55,6 +64,7 @@ class AI2ThorEnv:
                     "action": action,
                     "lastActionSuccess": success,
                     "errorMessage": metadata.get("errorMessage", ""),
+                    "actionReturn": metadata.get("actionReturn"),
                 },
                 observation={"metadata": metadata},
             )
@@ -80,3 +90,24 @@ class AI2ThorEnv:
 
     def get_frame(self) -> Any:
         return getattr(self.last_event, "frame", None)
+
+    def stop(self) -> None:
+        self.controller.stop()
+
+    def get_reachable_positions(self) -> list[dict[str, Any]]:
+        result = self.step("GetReachablePositions")
+        if not result.success:
+            return []
+        action_return = result.data.get("actionReturn")
+        return list(action_return or [])
+
+    def teleport(self, position: dict[str, Any], rotation: float = 0.0, horizon: float = 0.0) -> ToolResult:
+        return self.step(
+            "TeleportFull",
+            x=position["x"],
+            y=position["y"],
+            z=position["z"],
+            rotation={"x": 0.0, "y": rotation, "z": 0.0},
+            horizon=horizon,
+            standing=True,
+        )

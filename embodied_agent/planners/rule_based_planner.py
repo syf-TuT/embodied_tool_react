@@ -20,7 +20,7 @@ class RuleBasedPlanner(BasePlanner):
                     None,
                     "object_in_inventory:Mug",
                     [
-                        ToolCall("search_object", {"object_type": "Mug"}, "Find the mug"),
+                        self._search_call("Mug", "Find the mug"),
                         ToolCall("pick_object", {"object_type": "Mug"}, "Pick up the mug"),
                     ],
                 )
@@ -34,9 +34,9 @@ class RuleBasedPlanner(BasePlanner):
                     "CounterTop",
                     "object_on_receptacle:Mug:CounterTop",
                     [
-                        ToolCall("search_object", {"object_type": "Mug"}, "Find the mug"),
+                        self._search_call("Mug", "Find the mug"),
                         ToolCall("pick_object", {"object_type": "Mug"}, "Pick up the mug"),
-                        ToolCall("search_object", {"object_type": "CounterTop"}, "Find the countertop"),
+                        self._search_call("CounterTop", "Find the countertop"),
                         ToolCall("put_object", {"receptacle_type": "CounterTop"}, "Place the mug"),
                     ],
                 )
@@ -50,7 +50,7 @@ class RuleBasedPlanner(BasePlanner):
                     None,
                     "object_open:Fridge",
                     [
-                        ToolCall("search_object", {"object_type": "Fridge"}, "Find the fridge"),
+                        self._search_call("Fridge", "Find the fridge"),
                         ToolCall("open_object", {"object_type": "Fridge"}, "Open the fridge"),
                     ],
                 )
@@ -64,9 +64,9 @@ class RuleBasedPlanner(BasePlanner):
                     "Fridge",
                     "object_on_receptacle:Apple:Fridge",
                     [
-                        ToolCall("search_object", {"object_type": "Apple"}, "Find the apple"),
+                        self._search_call("Apple", "Find the apple"),
                         ToolCall("pick_object", {"object_type": "Apple"}, "Pick up the apple"),
-                        ToolCall("search_object", {"object_type": "Fridge"}, "Find the fridge"),
+                        self._search_call("Fridge", "Find the fridge"),
                         ToolCall("open_object", {"object_type": "Fridge"}, "Open the fridge"),
                         ToolCall("put_object", {"receptacle_type": "Fridge"}, "Place the apple"),
                     ],
@@ -95,6 +95,13 @@ class RuleBasedPlanner(BasePlanner):
         tool_calls: list[ToolCall],
     ) -> SubTask:
         return SubTask(subtask_id, description, target_object, target_receptacle, success_condition, tool_calls)
+
+    def _search_call(self, object_type: str, description: str) -> ToolCall:
+        return ToolCall(
+            "search_object",
+            {"object_type": object_type, "max_rotations": 1, "max_positions": 4},
+            description,
+        )
 
     def _task_id(self, instruction: str, scene: str) -> str:
         digest = hashlib.md5(f"{scene}:{instruction}".encode("utf-8")).hexdigest()[:8]

@@ -60,7 +60,10 @@ class EpisodeRunner:
                     failure_reasons.append(failure_type)
                     repair_calls = self.replanner.repair_calls(tool_call, failure_info, replan_count)
                     if repair_calls:
-                        queue = repair_calls + [tool_call] + queue
+                        if len(repair_calls) == 1 and repair_calls[0] == tool_call:
+                            queue = repair_calls + queue
+                        else:
+                            queue = repair_calls + [tool_call] + queue
                         replan_count += 1
                     if self.memory:
                         self.memory.add_failure_experience(
