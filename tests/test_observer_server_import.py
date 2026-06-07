@@ -21,6 +21,7 @@ class ObserverServerImportTest(unittest.TestCase):
         self.assertTrue(hasattr(module, "main"))
         self.assertTrue(hasattr(module, "parse_args"))
         self.assertTrue(hasattr(module, "FrameWebObserver"))
+        self.assertTrue(hasattr(module, "format_missing_dependency_message"))
 
     def test_import_and_parse_args_do_not_instantiate_ai2thor_env(self):
         with mock.patch("embodied_agent.envs.AI2ThorEnv") as ai2thor_env:
@@ -82,6 +83,16 @@ class ObserverServerImportTest(unittest.TestCase):
         self.assertIs(first, second)
         self.assertIsNot(first, third)
         self.assertEqual(started, [first, third])
+
+    def test_missing_dependency_message_names_requirements_install(self):
+        module = self.load_module()
+
+        message = module.format_missing_dependency_message(
+            ModuleNotFoundError("No module named 'fastapi'")
+        )
+
+        self.assertIn("Missing Python dependency", message)
+        self.assertIn("pip install -r requirements.txt", message)
 
 
 if __name__ == "__main__":

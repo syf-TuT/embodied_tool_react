@@ -110,6 +110,16 @@ The observer stores a short event history, so opening the browser after the
 server starts still replays recent episode events. If AI2-THOR fails in the
 background runner, the page receives an `observer_error` event.
 
+Observer run artifacts are written to:
+
+```text
+outputs/ai2thor_observer/
+  trajectories/ai2thor_observer_001.json
+  summary.csv
+  metrics.json
+  skill_memory.json
+```
+
 Outputs are written to:
 
 ```text

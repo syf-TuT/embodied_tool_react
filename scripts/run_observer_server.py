@@ -154,10 +154,27 @@ def parse_args(argv=None):
 
 
 def main() -> None:
-    import uvicorn
+    try:
+        import uvicorn
+    except ModuleNotFoundError as exc:
+        print(format_missing_dependency_message(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
 
     args = parse_args()
-    uvicorn.run(create_app(args), host=args.host, port=args.port)
+    try:
+        uvicorn.run(create_app(args), host=args.host, port=args.port)
+    except ModuleNotFoundError as exc:
+        print(format_missing_dependency_message(exc), file=sys.stderr)
+        raise SystemExit(2) from exc
+
+
+def format_missing_dependency_message(exc: ModuleNotFoundError) -> str:
+    return (
+        f"Missing Python dependency: {exc}. "
+        "Install project dependencies with "
+        "`.\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt` "
+        "or rebuild the Docker image before running the observer."
+    )
 
 
 if __name__ == "__main__":
