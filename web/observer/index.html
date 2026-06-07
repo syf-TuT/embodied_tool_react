@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI2-THOR Observer</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="observer-shell" aria-label="Realtime simulation observer">
+      <section class="frame-bay" aria-labelledby="frame-title">
+        <div class="frame-header">
+          <h1 id="frame-title">AI2-THOR Observer</h1>
+          <span id="connection" class="connection is-connecting" role="status" aria-live="polite">Connecting</span>
+        </div>
+        <div class="frame-viewport">
+          <img id="frame" alt="Live AI2-THOR simulation frame">
+          <div id="empty-frame" class="empty-frame">Waiting for frame</div>
+        </div>
+      </section>
+
+      <aside class="telemetry" aria-label="Episode telemetry">
+        <section class="status-grid" aria-label="Episode status">
+          <div>
+            <span>Task</span>
+            <strong id="task">-</strong>
+          </div>
+          <div>
+            <span>Scene</span>
+            <strong id="scene">-</strong>
+          </div>
+          <div>
+            <span>Step</span>
+            <strong id="step">0</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong id="status">Awaiting data</strong>
+          </div>
+        </section>
+
+        <section class="tool-panel" aria-labelledby="tool-title">
+          <h2 id="tool-title">Current Tool</h2>
+          <pre id="current-tool" tabindex="0">{}</pre>
+        </section>
+
+        <section class="objects-panel" aria-labelledby="objects-title">
+          <h2 id="objects-title">Visible Objects</h2>
+          <ul id="objects" aria-live="polite"></ul>
+        </section>
+
+        <section class="timeline-panel" aria-labelledby="timeline-title">
+          <h2 id="timeline-title">Timeline</h2>
+          <ol id="timeline" aria-live="polite"></ol>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
