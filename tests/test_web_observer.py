@@ -30,6 +30,16 @@ class BlockingWebSocket(FakeWebSocket):
         await asyncio.sleep(10)
 
 
+async def wait_until(predicate, timeout=0.5, interval=0.005):
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate():
+        if loop.time() >= deadline:
+            return False
+        await asyncio.sleep(interval)
+    return True
+
+
 class WebObserverTest(unittest.TestCase):
     def test_uses_thread_safe_standard_queue(self):
         observer = WebObserver()
@@ -100,9 +110,12 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         observer.on_event({"type": "episode_end"})
 
         await asyncio.wait_for(healthy.sent_event.wait(), timeout=0.2)
-        await asyncio.sleep(0.03)
+        cleanup_finished = await wait_until(
+            lambda: stale not in observer.clients and slow not in observer.clients
+        )
 
         self.assertEqual(healthy.sent[0]["type"], "episode_end")
+        self.assertTrue(cleanup_finished)
         self.assertNotIn(stale, observer.clients)
         self.assertNotIn(slow, observer.clients)
         self.assertIn(healthy, observer.clients)
