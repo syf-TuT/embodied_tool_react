@@ -1,4 +1,6 @@
 import importlib.util
+import io
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -27,6 +29,59 @@ class ObserverServerImportTest(unittest.TestCase):
 
         self.assertEqual(args.scene, "FloorPlan1")
         ai2thor_env.assert_not_called()
+
+    def test_run_episode_wrapper_emits_observer_error_event(self):
+        module = self.load_module()
+        observer = mock.Mock()
+        stderr = io.StringIO()
+
+        with mock.patch.object(
+            module, "start_episode", side_effect=ValueError("boom")
+        ), mock.patch("sys.stderr", stderr):
+            module.run_episode_with_error_event(SimpleNamespace(), observer)
+
+        observer.on_event.assert_called_once_with(
+            {
+                "type": "observer_error",
+                "message": "boom",
+                "error_type": "ValueError",
+            }
+        )
+        self.assertIn("ValueError: boom", stderr.getvalue())
+
+    def test_ensure_runner_thread_reuses_alive_thread_and_replaces_stopped_thread(self):
+        module = self.load_module()
+        state = SimpleNamespace()
+        started = []
+
+        class FakeThread:
+            def __init__(self, target, args, daemon):
+                self.target = target
+                self.args = args
+                self.daemon = daemon
+                self.alive = False
+
+            def start(self):
+                self.alive = True
+                started.append(self)
+
+            def is_alive(self):
+                return self.alive
+
+        first = module.ensure_runner_thread(
+            state, SimpleNamespace(), mock.Mock(), thread_factory=FakeThread
+        )
+        second = module.ensure_runner_thread(
+            state, SimpleNamespace(), mock.Mock(), thread_factory=FakeThread
+        )
+        first.alive = False
+        third = module.ensure_runner_thread(
+            state, SimpleNamespace(), mock.Mock(), thread_factory=FakeThread
+        )
+
+        self.assertIs(first, second)
+        self.assertIsNot(first, third)
+        self.assertEqual(started, [first, third])
 
 
 if __name__ == "__main__":

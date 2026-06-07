@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import queue
 import threading
+from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -11,10 +12,13 @@ if TYPE_CHECKING:
 
 
 class WebObserver:
-    def __init__(self, send_timeout: float = 1.0) -> None:
+    def __init__(self, send_timeout: float = 1.0, history_limit: int = 100) -> None:
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.clients: set[Any] = set()
+        self._client_replay_sequence: dict[Any, int] = {}
         self.send_timeout = send_timeout
+        self.history: deque[dict[str, Any]] = deque(maxlen=history_limit)
+        self._history_lock = threading.Lock()
         self._sequence = 0
         self._sequence_lock = threading.Lock()
 
@@ -24,14 +28,29 @@ class WebObserver:
             sequence = self._sequence
         enriched = dict(event)
         enriched["sequence"] = sequence
+        with self._history_lock:
+            self.history.append(enriched)
         self.queue.put_nowait(enriched)
 
     async def connect(self, websocket: Any) -> None:
         await websocket.accept()
+        with self._history_lock:
+            history = list(self.history)
+        last_replayed_sequence = 0
+        for event in history:
+            stale_client = await self._send_to_client(websocket, event)
+            if stale_client is not None:
+                return
+            last_replayed_sequence = max(
+                last_replayed_sequence,
+                int(event.get("sequence", 0)),
+            )
+        self._client_replay_sequence[websocket] = last_replayed_sequence
         self.clients.add(websocket)
 
     def disconnect(self, websocket: Any) -> None:
         self.clients.discard(websocket)
+        self._client_replay_sequence.pop(websocket, None)
 
     async def broadcast_loop(self) -> None:
         loop = asyncio.get_running_loop()
@@ -54,6 +73,8 @@ class WebObserver:
                 await asyncio.sleep(0)
 
     async def _send_to_client(self, client: Any, event: dict[str, Any]) -> Any | None:
+        if event.get("sequence", 0) <= self._client_replay_sequence.get(client, 0):
+            return None
         try:
             await asyncio.wait_for(client.send_json(event), timeout=self.send_timeout)
         except Exception:
@@ -74,6 +95,16 @@ def create_observer_app(observer: WebObserver, static_dir: Path) -> FastAPI:
     @app.on_event("startup")
     async def start_broadcast_loop() -> None:
         app.state.broadcast_task = asyncio.create_task(observer.broadcast_loop())
+
+    @app.on_event("shutdown")
+    async def stop_broadcast_loop() -> None:
+        task = getattr(app.state, "broadcast_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     @app.get("/")
     async def index():

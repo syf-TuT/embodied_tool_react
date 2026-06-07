@@ -80,20 +80,50 @@ def start_episode(args, observer: FrameWebObserver) -> None:
         env.stop()
 
 
+def run_episode_with_error_event(args, observer: FrameWebObserver) -> None:
+    try:
+        start_episode(args, observer)
+    except Exception as exc:
+        error_type = type(exc).__name__
+        print(f"[ERROR] {error_type}: {exc}", file=sys.stderr)
+        observer.on_event(
+            {
+                "type": "observer_error",
+                "message": str(exc),
+                "error_type": error_type,
+            }
+        )
+
+
+def ensure_runner_thread(
+    state,
+    args,
+    observer: FrameWebObserver,
+    thread_factory=threading.Thread,
+):
+    current = getattr(state, "runner_thread", None)
+    if current is not None and current.is_alive():
+        return current
+
+    thread = thread_factory(
+        target=run_episode_with_error_event,
+        args=(args, observer),
+        daemon=True,
+    )
+    state.runner_thread = thread
+    thread.start()
+    return thread
+
+
 def create_app(args=None):
     args = args or parse_args([])
     observer = FrameWebObserver()
     app = create_observer_app(observer, ROOT / "web" / "observer")
     app.state.observer = observer
-    app.state.runner_thread = threading.Thread(
-        target=start_episode,
-        args=(args, observer),
-        daemon=True,
-    )
 
     @app.on_event("startup")
     async def start_runner_thread() -> None:
-        app.state.runner_thread.start()
+        ensure_runner_thread(app.state, args, observer)
 
     return app
 

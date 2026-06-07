@@ -166,6 +166,24 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(websocket.sent_event.wait(), timeout=0.2)
         self.assertEqual(websocket.sent[0]["type"], "early_thread_event")
 
+    async def test_replays_recent_events_to_client_after_queue_was_drained(self):
+        observer = WebObserver()
+        self.start_broadcast_loop(observer)
+
+        observer.on_event({"type": "episode_start"})
+        observer.on_event({"type": "step", "step_id": 1})
+        queue_drained = await wait_until(observer.queue.empty)
+
+        websocket = FakeWebSocket()
+        await observer.connect(websocket)
+
+        self.assertTrue(queue_drained)
+        await asyncio.wait_for(websocket.sent_event.wait(), timeout=0.2)
+        self.assertEqual(
+            [event["type"] for event in websocket.sent],
+            ["episode_start", "step"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
