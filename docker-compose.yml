@@ -47,5 +47,41 @@ services:
     profiles:
       - shell
 
+  ai2thor-observer:
+    build:
+      context: .
+    image: embodied-tool-react-ai2thor:latest
+    working_dir: /workspace
+    shm_size: "2gb"
+    environment:
+      PYTHONPATH: /workspace
+    volumes:
+      - .:/workspace
+      - ai2thor_cache:/root/.ai2thor
+      - ./outputs:/workspace/outputs
+    ports:
+      - "8000:8000"
+    command:
+      - xvfb-run
+      - -a
+      - python
+      - scripts/run_observer_server.py
+      - --platform
+      - linux64
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --scene
+      - FloorPlan1
+      - --instruction
+      - put the apple in the fridge
+      - --max-steps
+      - "8"
+      - --server-timeout
+      - "20"
+    profiles:
+      - observer
+
 volumes:
   ai2thor_cache:

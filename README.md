@@ -85,6 +85,31 @@ The first real-navigation version uses reachable-position `TeleportFull` calls
 instead of full path planning. This keeps the experiment focused on high-level
 planning and tool repair rather than low-level locomotion.
 
+## Run Realtime Browser Observer
+
+To watch the AI2-THOR frame, tool calls, visible objects, failures, and replans
+while an episode is running, start the observer service:
+
+```powershell
+docker compose --profile observer run --rm --service-ports ai2thor-observer
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+Equivalent one-off command:
+
+```powershell
+docker compose run --rm -p 8000:8000 ai2thor xvfb-run -a python scripts/run_observer_server.py --platform linux64 --host 0.0.0.0 --port 8000
+```
+
+The observer stores a short event history, so opening the browser after the
+server starts still replays recent episode events. If AI2-THOR fails in the
+background runner, the page receives an `observer_error` event.
+
 Outputs are written to:
 
 ```text
