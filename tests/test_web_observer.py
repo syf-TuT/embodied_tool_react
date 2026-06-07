@@ -1,4 +1,5 @@
 import asyncio
+import queue
 import threading
 import unittest
 
@@ -30,6 +31,11 @@ class BlockingWebSocket(FakeWebSocket):
 
 
 class WebObserverTest(unittest.TestCase):
+    def test_uses_thread_safe_standard_queue(self):
+        observer = WebObserver()
+
+        self.assertIsInstance(observer.queue, queue.Queue)
+
     def test_on_event_enqueues_event_without_clients(self):
         observer = WebObserver()
 
@@ -53,7 +59,6 @@ class WebObserverTest(unittest.TestCase):
 
 class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        asyncio.get_running_loop().set_debug(False)
         self.tasks = []
 
     async def asyncTearDown(self):
@@ -109,7 +114,6 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         await observer.connect(websocket)
         self.start_broadcast_loop(observer)
         await asyncio.sleep(0)
-        self.assertIs(observer._loop, asyncio.get_running_loop())
 
         producer_error = []
 
@@ -126,6 +130,28 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(producer_error, [])
         await asyncio.wait_for(websocket.sent_event.wait(), timeout=0.2)
         self.assertEqual(websocket.sent[0]["type"], "thread_event")
+
+    async def test_on_event_from_thread_before_broadcast_loop_delivers_later(self):
+        observer = WebObserver()
+        websocket = FakeWebSocket()
+        producer_error = []
+
+        def produce_event():
+            try:
+                observer.on_event({"type": "early_thread_event"})
+            except Exception as exc:
+                producer_error.append(exc)
+
+        producer = threading.Thread(target=produce_event)
+        producer.start()
+        producer.join(timeout=1)
+
+        await observer.connect(websocket)
+        self.start_broadcast_loop(observer)
+
+        self.assertEqual(producer_error, [])
+        await asyncio.wait_for(websocket.sent_event.wait(), timeout=0.2)
+        self.assertEqual(websocket.sent[0]["type"], "early_thread_event")
 
 
 if __name__ == "__main__":
