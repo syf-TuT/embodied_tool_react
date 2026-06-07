@@ -4,6 +4,7 @@ from typing import Any
 
 from embodied_agent.detectors.success_detector import SuccessDetector
 from embodied_agent.memory.skill_memory import SkillMemory
+from embodied_agent.observers import EpisodeObserver
 from embodied_agent.replanning.failure_analyzer import FailureAnalyzer
 from embodied_agent.replanning.replanner import Replanner
 from embodied_agent.schemas.data_models import EpisodeResult, ToolCall
@@ -21,6 +22,7 @@ class EpisodeRunner:
         failure_analyzer: FailureAnalyzer | None = None,
         replanner: Replanner | None = None,
         memory: SkillMemory | None = None,
+        observer: EpisodeObserver | None = None,
     ) -> None:
         self.env = env
         self.planner = planner
@@ -31,11 +33,21 @@ class EpisodeRunner:
         self.failure_analyzer = failure_analyzer or FailureAnalyzer()
         self.replanner = replanner or Replanner(max_replans=max_replans)
         self.memory = memory
+        self.observer = observer
 
     def run(self, task_id: str, instruction: str, scene: str) -> EpisodeResult:
         reset_result = self.env.reset(scene)
         plan = self.planner.generate_plan(instruction, scene, reset_result.observation)
         plan.task_id = task_id or plan.task_id
+        self._emit(
+            {
+                "type": "episode_start",
+                "task_id": plan.task_id,
+                "instruction": instruction,
+                "scene": scene,
+                **self._observer_state(),
+            }
+        )
 
         trajectory: list[dict[str, Any]] = []
         failure_reasons: list[str] = []
@@ -65,6 +77,20 @@ class EpisodeRunner:
                         else:
                             queue = repair_calls + [tool_call] + queue
                         replan_count += 1
+                        self._emit(
+                            {
+                                "type": "replan",
+                                "task_id": plan.task_id,
+                                "scene": scene,
+                                "step_id": total_steps,
+                                "subtask_id": subtask.subtask_id,
+                                "tool_name": tool_call.tool_name,
+                                "failure_type": failure_type,
+                                "repair_call_count": len(repair_calls),
+                                "replan_count": replan_count,
+                                **self._observer_state(),
+                            }
+                        )
                     if self.memory:
                         self.memory.add_failure_experience(
                             instruction,
@@ -76,11 +102,32 @@ class EpisodeRunner:
                             False,
                         )
 
-                trajectory.append(self._trajectory_step(total_steps, subtask.subtask_id, tool_call, result, failure_type))
+                trajectory_step = self._trajectory_step(total_steps, subtask.subtask_id, tool_call, result, failure_type)
+                trajectory.append(trajectory_step)
+                self._emit(
+                    {
+                        "type": "step",
+                        "task_id": plan.task_id,
+                        "scene": scene,
+                        **trajectory_step,
+                        **self._observer_state(),
+                    }
+                )
                 if replan_count > self.max_replans:
                     break
 
             detector_result = self.success_detector.check(subtask, self.env)
+            self._emit(
+                {
+                    "type": "subtask_result",
+                    "task_id": plan.task_id,
+                    "scene": scene,
+                    "subtask_id": subtask.subtask_id,
+                    "success": detector_result.success,
+                    "message": detector_result.message,
+                    **self._observer_state(),
+                }
+            )
             if detector_result.success:
                 successful_subtasks += 1
             else:
@@ -93,7 +140,7 @@ class EpisodeRunner:
                 break
 
         subtask_rate = successful_subtasks / len(plan.subtasks) if plan.subtasks else 0.0
-        return EpisodeResult(
+        episode_result = EpisodeResult(
             task_id=plan.task_id,
             instruction=instruction,
             scene=scene,
@@ -106,6 +153,23 @@ class EpisodeRunner:
             failure_reasons=failure_reasons,
             trajectory=trajectory,
         )
+        self._emit(
+            {
+                "type": "episode_end",
+                "task_id": plan.task_id,
+                "instruction": instruction,
+                "scene": scene,
+                "success": episode_result.success,
+                "total_steps": total_steps,
+                "tool_call_count": total_steps,
+                "invalid_action_count": invalid_actions,
+                "replan_count": replan_count,
+                "subtask_success_rate": subtask_rate,
+                "failure_reasons": failure_reasons,
+                **self._observer_state(),
+            }
+        )
+        return episode_result
 
     def _trajectory_step(self, step_id: int, subtask_id: str, tool_call: ToolCall, result, failure_type: str) -> dict[str, Any]:
         metadata = result.observation.get("metadata", {})
@@ -123,3 +187,22 @@ class EpisodeRunner:
                 "lastActionSuccess": metadata.get("lastActionSuccess") if isinstance(metadata, dict) else None,
             },
         }
+
+    def _emit(self, event: dict[str, Any]) -> None:
+        if self.observer:
+            self.observer.on_event(event)
+
+    def _observer_state(self) -> dict[str, Any]:
+        visible_objects = []
+        if hasattr(self.env, "get_visible_objects"):
+            for obj in self.env.get_visible_objects():
+                visible_objects.append(
+                    {
+                        "objectId": obj.get("objectId"),
+                        "objectType": obj.get("objectType"),
+                        "distance": obj.get("distance"),
+                        "visible": obj.get("visible"),
+                    }
+                )
+        agent = self.env.get_agent_state() if hasattr(self.env, "get_agent_state") else {}
+        return {"agent": agent, "visible_objects": visible_objects}
