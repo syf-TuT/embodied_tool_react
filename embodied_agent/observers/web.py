@@ -37,14 +37,23 @@ class WebObserver:
         await websocket.accept()
         self._client_sent_sequence[websocket] = 0
         self._client_send_locks[websocket] = asyncio.Lock()
-        self.clients.add(websocket)
-        with self._history_lock:
-            history = list(self.history)
-        for event in history:
-            stale_client = await self._send_to_client(websocket, event)
-            if stale_client is not None:
-                self.disconnect(websocket)
-                return
+        while True:
+            with self._history_lock:
+                pending_events = [
+                    event
+                    for event in self.history
+                    if int(event.get("sequence", 0))
+                    > self._client_sent_sequence.get(websocket, 0)
+                ]
+                if not pending_events:
+                    self.clients.add(websocket)
+                    return
+
+            for event in pending_events:
+                stale_client = await self._send_to_client(websocket, event)
+                if stale_client is not None:
+                    self.disconnect(websocket)
+                    return
 
     def disconnect(self, websocket: Any) -> None:
         self.clients.discard(websocket)

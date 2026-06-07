@@ -44,6 +44,35 @@ class EmitDuringReplayWebSocket(FakeWebSocket):
             await wait_until(self.observer.queue.empty)
 
 
+class EmitLiveAfterFirstHistoryWebSocket(FakeWebSocket):
+    def __init__(self, observer):
+        super().__init__()
+        self.observer = observer
+        self.emitted = False
+
+    async def send_json(self, event):
+        await super().send_json(event)
+        if event["type"] == "history_1" and not self.emitted:
+            self.emitted = True
+            self.observer.on_event({"type": "live_3"})
+            await wait_until(self.observer.queue.empty)
+            if self in self.observer.clients:
+                await asyncio.wait_for(
+                    self.observer.live_send_started.wait(), timeout=0.2
+                )
+
+
+class LiveSendTrackingObserver(WebObserver):
+    def __init__(self):
+        super().__init__()
+        self.live_send_started = asyncio.Event()
+
+    async def _send_to_client(self, client, event):
+        if event["type"] == "live_3":
+            self.live_send_started.set()
+        return await super()._send_to_client(client, event)
+
+
 async def wait_until(predicate, timeout=0.5, interval=0.005):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -213,6 +242,24 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event["type"] for event in websocket.sent],
             ["episode_start", "during_connect"],
+        )
+
+    async def test_live_event_during_replay_does_not_skip_remaining_history(self):
+        observer = LiveSendTrackingObserver()
+        self.start_broadcast_loop(observer)
+        observer.on_event({"type": "history_1"})
+        observer.on_event({"type": "history_2"})
+        history_drained = await wait_until(observer.queue.empty)
+
+        websocket = EmitLiveAfterFirstHistoryWebSocket(observer)
+        await observer.connect(websocket)
+        delivered = await wait_until(lambda: len(websocket.sent) == 3)
+
+        self.assertTrue(history_drained)
+        self.assertTrue(delivered)
+        self.assertEqual(
+            [event["type"] for event in websocket.sent],
+            ["history_1", "history_2", "live_3"],
         )
 
 
