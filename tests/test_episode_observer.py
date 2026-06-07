@@ -3,7 +3,7 @@ import unittest
 from embodied_agent.factory import build_default_tool_registry
 from embodied_agent.planners import RuleBasedPlanner
 from embodied_agent.runner import EpisodeRunner
-from embodied_agent.schemas.data_models import ToolResult
+from embodied_agent.schemas.data_models import Plan, ToolResult
 
 
 class RecordingObserver:
@@ -63,6 +63,22 @@ class ObserverEnv:
         return ToolResult(True, "ok", observation={"metadata": self.get_metadata()})
 
 
+class NoObserverStateEnv:
+    def reset(self, scene):
+        return ToolResult(True, "reset_success", observation={"metadata": {}})
+
+    def get_visible_objects(self):
+        raise AssertionError("observer-only visible object state should not be read")
+
+    def get_agent_state(self):
+        raise AssertionError("observer-only agent state should not be read")
+
+
+class EmptyPlanner:
+    def generate_plan(self, instruction, scene, observation):
+        return Plan("generated_task", instruction, [])
+
+
 class EpisodeObserverTest(unittest.TestCase):
     def test_runner_emits_episode_step_and_end_events(self):
         observer = RecordingObserver()
@@ -97,6 +113,20 @@ class EpisodeObserverTest(unittest.TestCase):
         self.assertEqual(observer.events[-1]["task_id"], "task_observe")
         self.assertIn("visible_objects", observer.events[-1])
         self.assertIn("agent", observer.events[-1])
+
+    def test_no_observer_skips_observer_state_reads(self):
+        env = NoObserverStateEnv()
+        runner = EpisodeRunner(
+            env,
+            EmptyPlanner(),
+            build_default_tool_registry(env),
+            observer=None,
+        )
+
+        result = runner.run("task_no_observer", "already done", "FloorPlan1")
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.task_id, "task_no_observer")
 
 
 if __name__ == "__main__":

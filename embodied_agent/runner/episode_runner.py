@@ -45,7 +45,6 @@ class EpisodeRunner:
                 "task_id": plan.task_id,
                 "instruction": instruction,
                 "scene": scene,
-                **self._observer_state(),
             }
         )
 
@@ -88,7 +87,6 @@ class EpisodeRunner:
                                 "failure_type": failure_type,
                                 "repair_call_count": len(repair_calls),
                                 "replan_count": replan_count,
-                                **self._observer_state(),
                             }
                         )
                     if self.memory:
@@ -110,7 +108,6 @@ class EpisodeRunner:
                         "task_id": plan.task_id,
                         "scene": scene,
                         **trajectory_step,
-                        **self._observer_state(),
                     }
                 )
                 if replan_count > self.max_replans:
@@ -125,7 +122,6 @@ class EpisodeRunner:
                     "subtask_id": subtask.subtask_id,
                     "success": detector_result.success,
                     "message": detector_result.message,
-                    **self._observer_state(),
                 }
             )
             if detector_result.success:
@@ -166,7 +162,6 @@ class EpisodeRunner:
                 "replan_count": replan_count,
                 "subtask_success_rate": subtask_rate,
                 "failure_reasons": failure_reasons,
-                **self._observer_state(),
             }
         )
         return episode_result
@@ -190,7 +185,7 @@ class EpisodeRunner:
 
     def _emit(self, event: dict[str, Any]) -> None:
         if self.observer:
-            self.observer.on_event(event)
+            self.observer.on_event({**event, **self._observer_state()})
 
     def _observer_state(self) -> dict[str, Any]:
         visible_objects = []
