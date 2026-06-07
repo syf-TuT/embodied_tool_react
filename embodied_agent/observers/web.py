@@ -3,7 +3,11 @@ from __future__ import annotations
 import asyncio
 import queue
 import threading
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 class WebObserver:
@@ -55,3 +59,39 @@ class WebObserver:
         except Exception:
             return client
         return None
+
+
+def create_observer_app(observer: WebObserver, static_dir: Path) -> FastAPI:
+    from fastapi import FastAPI, WebSocket
+    from fastapi.responses import FileResponse, HTMLResponse
+    from fastapi.staticfiles import StaticFiles
+
+    app = FastAPI()
+
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.on_event("startup")
+    async def start_broadcast_loop() -> None:
+        app.state.broadcast_task = asyncio.create_task(observer.broadcast_loop())
+
+    @app.get("/")
+    async def index():
+        index_path = static_dir / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return HTMLResponse(
+            "<html><body><h1>Realtime observer server is running.</h1>"
+            "<p>Observer UI files are not installed yet.</p></body></html>"
+        )
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket) -> None:
+        await observer.connect(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        finally:
+            observer.disconnect(websocket)
+
+    return app
