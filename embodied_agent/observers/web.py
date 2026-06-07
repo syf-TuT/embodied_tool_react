@@ -15,7 +15,8 @@ class WebObserver:
     def __init__(self, send_timeout: float = 1.0, history_limit: int = 100) -> None:
         self.queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.clients: set[Any] = set()
-        self._client_replay_sequence: dict[Any, int] = {}
+        self._client_sent_sequence: dict[Any, int] = {}
+        self._client_send_locks: dict[Any, asyncio.Lock] = {}
         self.send_timeout = send_timeout
         self.history: deque[dict[str, Any]] = deque(maxlen=history_limit)
         self._history_lock = threading.Lock()
@@ -34,23 +35,21 @@ class WebObserver:
 
     async def connect(self, websocket: Any) -> None:
         await websocket.accept()
+        self._client_sent_sequence[websocket] = 0
+        self._client_send_locks[websocket] = asyncio.Lock()
+        self.clients.add(websocket)
         with self._history_lock:
             history = list(self.history)
-        last_replayed_sequence = 0
         for event in history:
             stale_client = await self._send_to_client(websocket, event)
             if stale_client is not None:
+                self.disconnect(websocket)
                 return
-            last_replayed_sequence = max(
-                last_replayed_sequence,
-                int(event.get("sequence", 0)),
-            )
-        self._client_replay_sequence[websocket] = last_replayed_sequence
-        self.clients.add(websocket)
 
     def disconnect(self, websocket: Any) -> None:
         self.clients.discard(websocket)
-        self._client_replay_sequence.pop(websocket, None)
+        self._client_sent_sequence.pop(websocket, None)
+        self._client_send_locks.pop(websocket, None)
 
     async def broadcast_loop(self) -> None:
         loop = asyncio.get_running_loop()
@@ -73,12 +72,21 @@ class WebObserver:
                 await asyncio.sleep(0)
 
     async def _send_to_client(self, client: Any, event: dict[str, Any]) -> Any | None:
-        if event.get("sequence", 0) <= self._client_replay_sequence.get(client, 0):
-            return None
-        try:
-            await asyncio.wait_for(client.send_json(event), timeout=self.send_timeout)
-        except Exception:
-            return client
+        lock = self._client_send_locks.setdefault(client, asyncio.Lock())
+        async with lock:
+            sequence = int(event.get("sequence", 0))
+            if sequence <= self._client_sent_sequence.get(client, 0):
+                return None
+            try:
+                await asyncio.wait_for(
+                    client.send_json(event), timeout=self.send_timeout
+                )
+            except Exception:
+                return client
+            self._client_sent_sequence[client] = max(
+                sequence,
+                self._client_sent_sequence.get(client, 0),
+            )
         return None
 
 

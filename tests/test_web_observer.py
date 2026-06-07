@@ -30,6 +30,20 @@ class BlockingWebSocket(FakeWebSocket):
         await asyncio.sleep(10)
 
 
+class EmitDuringReplayWebSocket(FakeWebSocket):
+    def __init__(self, observer):
+        super().__init__()
+        self.observer = observer
+        self.emitted = False
+
+    async def send_json(self, event):
+        await super().send_json(event)
+        if event["type"] == "episode_start" and not self.emitted:
+            self.emitted = True
+            self.observer.on_event({"type": "during_connect"})
+            await wait_until(self.observer.queue.empty)
+
+
 async def wait_until(predicate, timeout=0.5, interval=0.005):
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
@@ -182,6 +196,23 @@ class WebObserverBroadcastTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event["type"] for event in websocket.sent],
             ["episode_start", "step"],
+        )
+
+    async def test_event_emitted_during_replay_is_delivered_once(self):
+        observer = WebObserver()
+        self.start_broadcast_loop(observer)
+        observer.on_event({"type": "episode_start"})
+        history_drained = await wait_until(observer.queue.empty)
+
+        websocket = EmitDuringReplayWebSocket(observer)
+        await observer.connect(websocket)
+        delivered = await wait_until(lambda: len(websocket.sent) == 2)
+
+        self.assertTrue(history_drained)
+        self.assertTrue(delivered)
+        self.assertEqual(
+            [event["type"] for event in websocket.sent],
+            ["episode_start", "during_connect"],
         )
 
 
